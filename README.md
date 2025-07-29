@@ -1,4 +1,4 @@
-# 🚀 Data Pipeline Capstone Project
+# 🚀 Data Pipeline Capstone Project (Basketball Reference and E-Commerce)
 
 A comprehensive, interactive web-based data pipeline demonstrating the complete data science workflow: **Ingest → Transform → Analyze → Model**
 
