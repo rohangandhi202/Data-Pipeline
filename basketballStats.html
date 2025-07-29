@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NBA Web Scraping Pipeline</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 2.8rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+        }
+        
+        .pipeline-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .stage {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stage::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--stage-color);
+        }
+        
+        .stage:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 15px 50px rgba(0,0,0,0.2);
+        }
+        
+        .stage h3 {
+            color: #2d3748;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .stage-icon {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 1.1rem;
+        }
+        
+        .ingest { --stage-color: #e53e3e; }
+        .ingest .stage-icon { background: #e53e3e; }
+        
+        .transform { --stage-color: #3182ce; }
+        .transform .stage-icon { background: #3182ce; }
+        
+        .analyze { --stage-color: #38a169; }
+        .analyze .stage-icon { background: #38a169; }
+        
+        .model { --stage-color: #805ad5; }
+        .model .stage-icon { background: #805ad5; }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .url-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+        
+        .output {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            min-height: 120px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            overflow-y: auto;
+            max-height: 350px;
+        }
+        
+        .chart-container {
+            margin-top: 25px;
+            height: 350px;
+            position: relative;
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #667eea20, #764ba220);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+        
+        .metric-label {
+            font-size: 0.85rem;
+            color: #718096;
+            text-transform: uppercase;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.8s ease;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .data-table th {
+            background: #4a5568;
+            color: white;
+            padding: 12px 8px;
+            text-align: left;
+            font-size: 0.8rem;
+        }
+        
+        .data-table td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.8rem;
+        }
+        
+        .data-table tr:hover {
+            background: #f7fafc;
+        }
+        
+        .log-container {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            max-height: 250px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        
+        .info {
+            background: #bee3f8;
+            border: 1px solid #90cdf4;
+            color: #2b6cb0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;  
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏀 NBA Web Scraping Pipeline</h1>
+            <p>Scrape → Transform → Analyze → Model</p>
+        </div>
+        
+        <div class="pipeline-container">
+            <!-- INGEST STAGE -->
+            <div class="stage ingest">
+                <h3>
+                    <span class="stage-icon">🕸️</span>
+                    Data Ingest (Web Scraping)
+                </h3>
+                
+                <div class="info">
+                    <strong>Note:</strong> Due to CORS restrictions, this demo simulates scraping with realistic NBA data.
+                </div>
+                
+                <input type="text" class="url-input" id="scrapeUrl" 
+                       value="https://www.basketball-reference.com/leagues/NBA_2025_per_game.html" 
+                       placeholder="Enter Basketball Reference URL">
+                
+                <div class="controls">
+                    <button onclick="simulateScraping()" id="scrapeBtn">
+                        🚀 Start Scraping
+                    </button>
+                    <button onclick="loadSampleData()" id="sampleBtn">
+                        📊 Load Sample Data
+                    </button>
+                </div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="scrapeProgress"></div>
+                </div>
+                
+                <div class="output" id="scrapeOutput">Ready to scrape NBA player statistics...</div>
+            </div>
+            
+            <!-- TRANSFORM STAGE -->
+            <div class="stage transform">
+                <h3>
+                    <span class="stage-icon">🔄</span>
+                    Data Transform
+                </h3>
+                
+                <div class="controls">
+                    <button onclick="cleanData()" id="cleanBtn" disabled>
+                        🧹 Clean Data
+                    </button>
+                    <button onclick="normalizeStats()" id="normalizeBtn" disabled>
+                        📏 Normalize Stats
+                    </button>
+                    <button onclick="createFeatures()" id="featureBtn" disabled>
+                        ⚙️ Engineer Features
+                    </button>
+                </div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="transformProgress"></div>
+                </div>
+                
+                <div class="output" id="transformOutput">Waiting for scraped data...</div>
+            </div>
+            
+            <!-- ANALYZE STAGE -->
+            <div class="stage analyze">
+                <h3>
+                    <span class="stage-icon">📊</span>
+                    Data Analysis
+                </h3>
+                
+                <div class="controls">
+                    <button onclick="exploreData()" id="exploreBtn" disabled>
+                        🔍 Explore Data
+                    </button>
+                    <button onclick="generateInsights()" id="insightBtn" disabled>
+                        💡 Generate Insights
+                    </button>
+                    <button onclick="createVisualizations()" id="visualizeBtn" disabled>
+                        📈 Visualize
+                    </button>
+                </div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="analyzeProgress"></div>
+                </div>
+                
+                <div class="metrics-grid" id="analysisMetrics">
+                    <!-- Metrics will be populated here -->
+                </div>
+                
+                <div class="chart-container">
+                    <canvas id="analysisChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- MODEL STAGE -->
+            <div class="stage model">
+                <h3>
+                    <span class="stage-icon">🤖</span>
+                    ML Modeling
+                </h3>
+                
+                <div class="controls">
+                    <button onclick="prepareModelData()" id="prepareModelBtn" disabled>
+                        🎯 Prepare Features
+                    </button>
+                    <button onclick="trainModel()" id="trainModelBtn" disabled>
+                        🏋️ Train Model
+                    </button>
+                    <button onclick="evaluateModel()" id="evaluateModelBtn" disabled>
+                        📊 Evaluate
+                    </button>
+                </div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="modelProgress"></div>
+                </div>
+                
+                <div class="metrics-grid" id="modelMetrics">
+                    <!-- Model metrics will be populated here -->
+                </div>
+                
+                <div class="chart-container">
+                    <canvas id="modelChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Data Preview -->
+        <div class="stage" style="margin-top: 20px;">
+            <h3>📋 Data Preview</h3>
+            <div id="dataPreview"></div>
+        </div>
+        
+        <!-- Pipeline Log -->
+        <div class="log-container" id="pipelineLog">🏀 NBA Web Scraping Pipeline Initialized</div>
+    </div>
+
+    <script>
+        // Global variables
+        let rawData = [];
+        let cleanedData = [];
+        let transformedData = [];
+        let modelData = {};
+        let analysisResults = {};
+        
+        // Logging function
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('pipelineLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            logElement.textContent += `\n[${timestamp}] ${emoji} ${message}`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        // Progress bar animation
+        function updateProgress(progressId, percentage) {
+            const element = document.getElementById(progressId);
+            if (element) {
+                element.style.width = percentage + '%';
+            }
+        }
+        
+        // Generate realistic NBA player data
+        function generateRealisticNBAData() {
+            const teams = ['LAL', 'GSW', 'BOS', 'MIA', 'PHX', 'MIL', 'DEN', 'LAC', 'DAL', 'PHI'];
+            const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
+            const names = [
+                'LeBron James', 'Stephen Curry', 'Kevin Durant', 'Giannis Antetokounmpo',
+                'Luka Doncic', 'Jayson Tatum', 'Joel Embiid', 'Nikola Jokic',
+                'Kawhi Leonard', 'Jimmy Butler', 'Damian Lillard', 'Russell Westbrook',
+                'Anthony Davis', 'Paul George', 'Chris Paul', 'Kyle Lowry'
+            ];
+            
+            rawData = [];
+            
+            for (let i = 0; i < 300; i++) {
+                const team = teams[Math.floor(Math.random() * teams.length)];
+                const pos = positions[Math.floor(Math.random() * positions.length)];
+                const name = i < names.length ? names[i] : `Player ${i + 1}`;
+                
+                const isStarPlayer = Math.random() < 0.2;
+                const isStarter = Math.random() < 0.5;
+                
+                let mpg = isStarPlayer ? 32 + Math.random() * 5 : 
+                         isStarter ? 20 + Math.random() * 12 : 
+                         8 + Math.random() * 15;
+                
+                let ppg = isStarPlayer ? 20 + Math.random() * 15 :
+                         isStarter ? 8 + Math.random() * 15 :
+                         2 + Math.random() * 12;
+                
+                let rpg = ['C', 'PF'].includes(pos) ? 
+                         (isStarPlayer ? 8 + Math.random() * 6 : 4 + Math.random() * 6) :
+                         (isStarPlayer ? 4 + Math.random() * 4 : 2 + Math.random() * 4);
+                
+                let apg = pos === 'PG' ?
+                         (isStarPlayer ? 6 + Math.random() * 6 : 3 + Math.random() * 5) :
+                         (isStarPlayer ? 3 + Math.random() * 4 : 1 + Math.random() * 3);
+                
+                const fgPct = 0.35 + Math.random() * 0.25;
+                const fg3Pct = 0.25 + Math.random() * 0.20;
+                const ftPct = 0.60 + Math.random() * 0.35;
+                
+                rawData.push({
+                    player: name,
+                    pos: pos,
+                    age: 19 + Math.floor(Math.random() * 16),
+                    tm: team,
+                    g: Math.floor(50 + Math.random() * 32),
+                    gs: Math.floor(Math.random() * (mpg > 20 ? 60 : 30)),
+                    mp: Math.round(mpg * 10) / 10,
+                    pts: Math.round(ppg * 10) / 10,
+                    trb: Math.round(rpg * 10) / 10,
+                    ast: Math.round(apg * 10) / 10,
+                    fg_pct: Math.round(fgPct * 1000) / 1000,
+                    fg3_pct: Math.round(fg3Pct * 1000) / 1000,
+                    ft_pct: Math.round(ftPct * 1000) / 1000,
+                    stl: Math.round((0.5 + Math.random() * 1.5) * 10) / 10,
+                    blk: ['C', 'PF'].includes(pos) ? Math.round((0.3 + Math.random() * 2) * 10) / 10 : Math.round((Math.random() * 0.8) * 10) / 10,
+                    tov: Math.round((1 + Math.random() * 3) * 10) / 10
+                });
+            }
+        }
+        
+        // Simulate web scraping
+        function simulateScraping() {
+            log('🚀 Starting web scraping process...');
+            updateProgress('scrapeProgress', 0);
+            
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 20;
+                updateProgress('scrapeProgress', progress);
+                
+                if (progress === 40) {
+                    log('🌐 Fetching HTML content...');
+                } else if (progress === 80) {
+                    log('📋 Parsing table data...');
+                }
+                
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    generateRealisticNBAData();
+                    log(`✅ Successfully scraped ${rawData.length} NBA players!`, 'success');
+                    
+                    document.getElementById('scrapeOutput').textContent = 
+`Scraping Complete! 🎉
+
+Players Scraped: ${rawData.length}
+Data Structure: ${Object.keys(rawData[0]).length} columns
+
+Sample columns:
+- player, pos, age, tm
+- pts, trb, ast, mp
+- fg_pct, fg3_pct, ft_pct
+- stl, blk, tov
+
+Ready for transformation! 🔄`;
+                    
+                    updateDataPreview();
+                    document.getElementById('cleanBtn').disabled = false;
+                }
+            }, 500);
+        }
+        
+        // Load sample data
+        function loadSampleData() {
+            log('📊 Loading sample NBA dataset...');
+            generateRealisticNBAData();
+            updateProgress('scrapeProgress', 100);
+            
+            document.getElementById('scrapeOutput').textContent =
+`Sample Data Loaded! 🎉
+
+Dataset: NBA 2024-25 Season
+Players: ${rawData.length}
+Teams: 10 NBA teams
+
+Ready for transformation! 🔄`;
+
+            updateDataPreview();
+            document.getElementById('cleanBtn').disabled = false;
+            log('✅ Sample data loaded successfully!', 'success');
+        }
+        
+        // Update data preview table
+        function updateDataPreview() {
+            const preview = document.getElementById('dataPreview');
+            if (rawData.length === 0) return;
+            
+            const sampleData = rawData.slice(0, 10);
+            const keys = ['player', 'pos', 'age', 'tm', 'pts', 'trb', 'ast', 'mp'];
+            
+            let tableHTML = `<table class="data-table">
+                <thead>
+                    <tr>${keys.map(key => `<th>${key.toUpperCase()}</th>`).join('')}</tr>
+                </thead>
+                <tbody>`;
+            
+            sampleData.forEach(row => {
+                tableHTML += `<tr>${keys.map(key => `<td>${row[key]}</td>`).join('')}</tr>`;
+            });
+            
+            tableHTML += `</tbody></table>
+                <p style="margin-top: 10px; font-size: 0.9rem; color: #718096;">
+                    Showing first 10 of ${rawData.length} records
+                </p>`;
+            
+            preview.innerHTML = tableHTML;
+        }
+        
+        // STAGE 2: Data Transformation
+        function cleanData() {
+            log('🧹 Starting data cleaning process...');
+            updateProgress('transformProgress', 33);
+            
+            const originalCount = rawData.length;
+            
+            cleanedData = rawData.filter(player => {
+                return player.g >= 10 && 
+                       player.mp >= 5 && 
+                       player.pts !== null &&
+                       player.trb !== null &&
+                       player.ast !== null;
+            });
+            
+            const removedCount = originalCount - cleanedData.length;
+            
+            document.getElementById('transformOutput').textContent = 
+`Data Cleaning Complete! ✅
+
+Original Players: ${originalCount}
+Cleaned Players: ${cleanedData.length}
+Removed: ${removedCount}
+
+Cleaning rules applied:
+- Minimum 10 games played
+- Minimum 5 minutes per game
+- Valid key statistics`;
+
+            document.getElementById('normalizeBtn').disabled = false;
+            log(`🧹 Data cleaning complete: ${cleanedData.length} valid players`, 'success');
+        }
+        
+        function normalizeStats() {
+            log('📏 Normalizing statistical features...');
+            updateProgress('transformProgress', 66);
+            
+            const stats = ['pts', 'trb', 'ast', 'mp'];
+            const normParams = {};
+            
+            stats.forEach(stat => {
+                const values = cleanedData.map(p => p[stat]);
+                normParams[stat] = {
+                    min: Math.min(...values),
+                    max: Math.max(...values)
+                };
+            });
+            
+            cleanedData = cleanedData.map(player => ({
+                ...player,
+                pts_norm: (player.pts - normParams.pts.min) / (normParams.pts.max - normParams.pts.min),
+                trb_norm: (player.trb - normParams.trb.min) / (normParams.trb.max - normParams.trb.min),
+                ast_norm: (player.ast - normParams.ast.min) / (normParams.ast.max - normParams.ast.min),
+                efficiency: (player.pts + player.trb + player.ast) / player.mp
+            }));
+            
+            document.getElementById('transformOutput').textContent += 
+`\n\nNormalization Complete! 📏
+
+Normalized features:
+- Points: ${normParams.pts.min.toFixed(1)} - ${normParams.pts.max.toFixed(1)}
+- Rebounds: ${normParams.trb.min.toFixed(1)} - ${normParams.trb.max.toFixed(1)} 
+- Assists: ${normParams.ast.min.toFixed(1)} - ${normParams.ast.max.toFixed(1)}
+
+Added efficiency metric!`;
+
+            document.getElementById('featureBtn').disabled = false;
+            log('📏 Statistical normalization completed', 'success');
+        }
+        
+        function createFeatures() {
+            log('⚙️ Engineering advanced features...');
+            updateProgress('transformProgress', 100);
+            
+            transformedData = cleanedData.map(player => ({
+                ...player,
+                is_starter: player.gs > 40,
+                scoring_type: player.pts > 20 ? 'High' : player.pts > 10 ? 'Medium' : 'Low',
+                versatility: (player.pts + player.trb + player.ast) / 3,
+                defensive_impact: player.stl + player.blk,
+                ball_security: player.ast / (player.tov + 0.1)
+            }));
+            
+            document.getElementById('transformOutput').textContent += 
+`\n\nFeature Engineering Complete! ⚙️
+
+New features created:
+- is_starter (boolean)
+- scoring_type (High/Medium/Low)
+- versatility score
+- defensive_impact
+- ball_security ratio
+
+Ready for analysis! 📊`;
+
+            document.getElementById('exploreBtn').disabled = false;
+            log('⚙️ Feature engineering completed', 'success');
+        }
+        
+        // STAGE 3: Data Analysis
+        function exploreData() {
+            log('🔍 Exploring data patterns...');
+            updateProgress('analyzeProgress', 33);
+            
+            const avgPts = transformedData.reduce((sum, p) => sum + p.pts, 0) / transformedData.length;
+            const avgReb = transformedData.reduce((sum, p) => sum + p.trb, 0) / transformedData.length;
+            const avgAst = transformedData.reduce((sum, p) => sum + p.ast, 0) / transformedData.length;
+            const startersCount = transformedData.filter(p => p.is_starter).length;
+            
+            analysisResults = {
+                avgPts: Math.round(avgPts * 10) / 10,
+                avgReb: Math.round(avgReb * 10) / 10,
+                avgAst: Math.round(avgAst * 10) / 10,
+                startersCount,
+                totalPlayers: transformedData.length
+            };
+            
+            displayAnalysisMetrics();
+            document.getElementById('insightBtn').disabled = false;
+            log('🔍 Data exploration completed', 'success');
+        }
+        
+        function displayAnalysisMetrics() {
+            const container = document.getElementById('analysisMetrics');
+            container.innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-value">${analysisResults.avgPts}</div>
+                    <div class="metric-label">Avg Points</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${analysisResults.avgReb}</div>
+                    <div class="metric-label">Avg Rebounds</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${analysisResults.avgAst}</div>
+                    <div class="metric-label">Avg Assists</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${analysisResults.startersCount}</div>
+                    <div class="metric-label">Starters</div>
+                </div>
+            `;
+        }
+        
+        function generateInsights() {
+            log('💡 Generating insights...');
+            updateProgress('analyzeProgress', 66);
+            
+            const topScorer = transformedData.reduce((max, p) => p.pts > max.pts ? p : max);
+            const topRebounder = transformedData.reduce((max, p) => p.trb > max.trb ? p : max);
+            const mostVersatile = transformedData.reduce((max, p) => p.versatility > max.versatility ? p : max);
+            
+            log(`🏀 Top Scorer: ${topScorer.player} (${topScorer.pts} PPG)`, 'success');
+            log(`📊 Top Rebounder: ${topRebounder.player} (${topRebounder.trb} RPG)`, 'success');
+            log(`⭐ Most Versatile: ${mostVersatile.player} (${mostVersatile.versatility.toFixed(1)})`, 'success');
+            
+            document.getElementById('visualizeBtn').disabled = false;
+            log('💡 Insights generated successfully', 'success');
+        }
+        
+        function createVisualizations() {
+            log('📈 Creating visualizations...');
+            updateProgress('analyzeProgress', 100);
+            
+            const positionStats = {};
+            transformedData.forEach(player => {
+                if (!positionStats[player.pos]) {
+                    positionStats[player.pos] = { pts: 0, count: 0 };
+                }
+                positionStats[player.pos].pts += player.pts;
+                positionStats[player.pos].count += 1;
+            });
+            
+            const chartData = Object.keys(positionStats).map(pos => ({
+                position: pos,
+                avgPts: positionStats[pos].pts / positionStats[pos].count
+            }));
+            
+            const ctx = document.getElementById('analysisChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.map(d => d.position),
+                    datasets: [{
+                        label: 'Average Points by Position',
+                        data: chartData.map(d => d.avgPts),
+                        backgroundColor: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Average Points by Position'
+                        }
+                    }
+                }
+            });
+            
+            document.getElementById('prepareModelBtn').disabled = false;
+            log('📈 Visualizations created successfully', 'success');
+        }
+        
+        // STAGE 4: ML Modeling
+        function prepareModelData() {
+            log('🎯 Preparing features for modeling...');
+            updateProgress('modelProgress', 25);
+            
+            // Prepare features for predicting if player is a starter
+            modelData.features = transformedData.map(player => ({
+                mp: player.mp,
+                pts: player.pts,
+                trb: player.trb,
+                ast: player.ast,
+                efficiency: player.efficiency,
+                target: player.is_starter ? 1 : 0
+            }));
+            
+            // Split data (80/20)
+            const splitIndex = Math.floor(modelData.features.length * 0.8);
+            modelData.trainData = modelData.features.slice(0, splitIndex);
+            modelData.testData = modelData.features.slice(splitIndex);
+            
+            log(`📊 Training set: ${modelData.trainData.length} players`, 'success');
+            log(`📊 Test set: ${modelData.testData.length} players`, 'success');
+            
+            document.getElementById('trainModelBtn').disabled = false;
+            log('🎯 Model data preparation completed', 'success');
+        }
+        
+        function trainModel() {
+            log('🏋️ Training logistic regression model...');
+            updateProgress('modelProgress', 75);
+            
+            // Simple logistic regression implementation
+            // Using points per game as main predictor for starter status
+            const X = modelData.trainData.map(row => row.pts);
+            const Y = modelData.trainData.map(row => row.target);
+            
+            // Calculate simple threshold-based model
+            const starters = X.filter((pts, i) => Y[i] === 1);
+            const nonStarters = X.filter((pts, i) => Y[i] === 0);
+            
+            const starterAvg = starters.reduce((sum, pts) => sum + pts, 0) / starters.length;
+            const nonStarterAvg = nonStarters.reduce((sum, pts) => sum + pts, 0) / nonStarters.length;
+            
+            // Threshold is midpoint between averages
+            modelData.threshold = (starterAvg + nonStarterAvg) / 2;
+            
+            log(`🎯 Model threshold: ${modelData.threshold.toFixed(1)} PPG`, 'success');
+            log(`📈 Starter avg: ${starterAvg.toFixed(1)} PPG`, 'info');
+            log(`📉 Non-starter avg: ${nonStarterAvg.toFixed(1)} PPG`, 'info');
+            
+            document.getElementById('evaluateModelBtn').disabled = false;
+            log('🏋️ Model training completed', 'success');
+        }
+        
+        function evaluateModel() {
+            log('📊 Evaluating model performance...');
+            updateProgress('modelProgress', 100);
+            
+            // Make predictions on test set
+            const predictions = modelData.testData.map(row => 
+                row.pts >= modelData.threshold ? 1 : 0
+            );
+            
+            const actuals = modelData.testData.map(row => row.target);
+            
+            // Calculate accuracy metrics
+            let correct = 0;
+            let truePositives = 0;
+            let falsePositives = 0;
+            let trueNegatives = 0;
+            let falseNegatives = 0;
+            
+            predictions.forEach((pred, i) => {
+                const actual = actuals[i];
+                if (pred === actual) correct++;
+                
+                if (pred === 1 && actual === 1) truePositives++;
+                else if (pred === 1 && actual === 0) falsePositives++;
+                else if (pred === 0 && actual === 0) trueNegatives++;
+                else if (pred === 0 && actual === 1) falseNegatives++;
+            });
+            
+            const accuracy = (correct / predictions.length) * 100;
+            const precision = truePositives / (truePositives + falsePositives) || 0;
+            const recall = truePositives / (truePositives + falseNegatives) || 0;
+            const f1Score = 2 * (precision * recall) / (precision + recall) || 0;
+            
+            modelData.metrics = {
+                accuracy: Math.round(accuracy * 10) / 10,
+                precision: Math.round(precision * 1000) / 1000,
+                recall: Math.round(recall * 1000) / 1000,
+                f1Score: Math.round(f1Score * 1000) / 1000
+            };
+            
+            displayModelMetrics();
+            createModelChart(predictions, actuals);
+            
+            log(`✅ Model Accuracy: ${modelData.metrics.accuracy}%`, 'success');
+            log(`📊 Precision: ${modelData.metrics.precision}`, 'success');
+            log(`📊 Recall: ${modelData.metrics.recall}`, 'success');
+            log('🎉 NBA Pipeline completed successfully!', 'success');
+        }
+        
+        function displayModelMetrics() {
+            const container = document.getElementById('modelMetrics');
+            container.innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-value">${modelData.metrics.accuracy}%</div>
+                    <div class="metric-label">Accuracy</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${modelData.metrics.precision}</div>
+                    <div class="metric-label">Precision</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${modelData.metrics.recall}</div>
+                    <div class="metric-label">Recall</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${modelData.metrics.f1Score}</div>
+                    <div class="metric-label">F1 Score</div>
+                </div>
+            `;
+        }
+        
+        function createModelChart(predictions, actuals) {
+            const ctx = document.getElementById('modelChart').getContext('2d');
+            
+            // Create confusion matrix data
+            let tp = 0, fp = 0, tn = 0, fn = 0;
+            predictions.forEach((pred, i) => {
+                const actual = actuals[i];
+                if (pred === 1 && actual === 1) tp++;
+                else if (pred === 1 && actual === 0) fp++;
+                else if (pred === 0 && actual === 0) tn++;
+                else if (pred === 0 && actual === 1) fn++;
+            });
+            
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['True Positives', 'False Positives', 'True Negatives', 'False Negatives'],
+                    datasets: [{
+                        data: [tp, fp, tn, fn],
+                        backgroundColor: ['#38a169', '#e53e3e', '#3182ce', '#805ad5'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Model Performance - Confusion Matrix'
+                        },
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initialize the pipeline
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🏀 NBA Web Scraping Pipeline Ready!', 'success');
+            log('Click "Start Scraping" or "Load Sample Data" to begin!', 'info');
+        });
+    </script>
+</body>
+</html>
